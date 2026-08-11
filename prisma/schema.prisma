@@ -1,0 +1,48 @@
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "cjs"
+  importFileExtension = ""
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  ADMIN
+  USER
+}
+
+enum FilmSource {
+  SWAPI
+  LOCAL
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  name      String
+  role      Role     @default(USER)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("users")
+}
+
+model Film {
+  id           String     @id @default(uuid())
+  episodeId    Int?       @unique
+  title        String
+  openingCrawl String
+  director     String
+  producer     String
+  releaseDate  DateTime
+  source       FilmSource @default(LOCAL)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@index([title])
+  @@map("films")
+}

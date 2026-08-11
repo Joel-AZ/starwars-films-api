@@ -1,0 +1,352 @@
+{
+  "info": {
+    "name": "Star Wars Films API",
+    "description": "Film management API built with NestJS.\n\nPoint `baseUrl` at any environment and the whole collection follows. Run it top to bottom with the Collection Runner: every request carries its own assertions, `Register` generates a fresh email so the run is repeatable, and `Login` stores the token in `accessToken` for the requests that need it.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000/api",
+      "type": "string"
+    },
+    {
+      "key": "accessToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "userEmail",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "userName",
+      "value": "Luke Skywalker",
+      "type": "string"
+    },
+    {
+      "key": "userPassword",
+      "value": "the-force-is-strong",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Health check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["health"]
+            },
+            "description": "Liveness probe. Runs a real query against the database, so a 200 here means the whole chain (Nest, Prisma, Postgres) is up."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('responds 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test('service is ok', () => pm.expect(body.status).to.eql('ok'));",
+                  "pm.test('database is reachable', () => pm.expect(body.database).to.eql('up'));",
+                  "pm.test('uptime is a number', () => pm.expect(body.uptime).to.be.a('number'));",
+                  "pm.test('timestamp is a valid date', () => pm.expect(Date.parse(body.timestamp)).to.not.be.NaN);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Unknown route returns 404",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/does-not-exist",
+              "host": ["{{baseUrl}}"],
+              "path": ["does-not-exist"]
+            },
+            "description": "Baseline for the error shape. Every error the API returns should look like this one."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('responds 404', () => pm.response.to.have.status(404));",
+                  "",
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test('error payload has the standard shape', () => {",
+                  "  pm.expect(body).to.have.property('statusCode', 404);",
+                  "  pm.expect(body).to.have.property('message');",
+                  "  pm.expect(body).to.have.property('error');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Register",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"name\": \"{{userName}}\",\n  \"password\": \"{{userPassword}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/register",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "register"]
+            },
+            "description": "Creates an account. New accounts always get the USER role — administrators come from the database seed, never from this endpoint."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// A fresh address per run keeps the collection repeatable.",
+                  "pm.collectionVariables.set('userEmail', `luke-${Date.now()}@rebellion.org`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('responds 201', () => pm.response.to.have.status(201));",
+                  "",
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test('returns a bearer token', () => {",
+                  "  pm.expect(body.accessToken).to.be.a('string').and.not.empty;",
+                  "  pm.expect(body.tokenType).to.eql('Bearer');",
+                  "});",
+                  "",
+                  "pm.test('new accounts get the USER role', () => pm.expect(body.user.role).to.eql('USER'));",
+                  "pm.test('never leaks the password', () => pm.expect(pm.response.text()).to.not.include('password'));",
+                  "",
+                  "pm.collectionVariables.set('accessToken', body.accessToken);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Register with a duplicate email returns 409",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"name\": \"{{userName}}\",\n  \"password\": \"{{userPassword}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/register",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "register"]
+            },
+            "description": "Re-sends the address the previous request just registered."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('responds 409', () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Register with an invalid payload returns 400",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"not-an-email\",\n  \"name\": \"L\",\n  \"password\": \"short\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/register",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "register"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('responds 400', () => pm.response.to.have.status(400));",
+                  "",
+                  "pm.test('reports every invalid field', () => {",
+                  "  const message = JSON.stringify(pm.response.json().message);",
+                  "  pm.expect(message).to.include('email');",
+                  "  pm.expect(message).to.include('password');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login with a wrong password returns 401",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"password\": \"definitely-not-it\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "login"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('responds 401', () => pm.response.to.have.status(401));",
+                  "",
+                  "pm.test('does not reveal whether the account exists', () => {",
+                  "  pm.expect(pm.response.json().message).to.eql('Invalid email or password.');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"password\": \"{{userPassword}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "login"]
+            },
+            "description": "Stores the returned token in the `accessToken` collection variable, so every protected request below picks it up automatically."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('responds 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test('returns a bearer token', () => pm.expect(body.accessToken).to.be.a('string').and.not.empty);",
+                  "",
+                  "pm.collectionVariables.set('accessToken', body.accessToken);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Me without a token returns 401",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/me",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "me"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('responds 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Me",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/me",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "me"]
+            },
+            "description": "Resolves the token against the database on every call, so a token whose user was deleted stops working immediately."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('responds 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test('returns the profile behind the token', () => {",
+                  "  pm.expect(body.email).to.eql(pm.collectionVariables.get('userEmail'));",
+                  "  pm.expect(body.role).to.eql('USER');",
+                  "});",
+                  "",
+                  "pm.test('never leaks the password', () => pm.expect(pm.response.text()).to.not.include('password'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
