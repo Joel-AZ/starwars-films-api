@@ -14,14 +14,11 @@
       "script": {
         "type": "text/javascript",
         "exec": [
-          "// Makes every protected request runnable on its own: logs in as the",
-          "// regular user, and on a fresh database creates that account first",
-          "// through the public registration endpoint. Only fires when there is",
-          "// no token yet — clear `accessToken` to force it to run again.",
-          "if (pm.collectionVariables.get('accessToken')) {",
-          "  return;",
-          "}",
-          "",
+          "// Makes every protected request runnable on its own: fetches the two",
+          "// tokens the collection needs, and on a fresh database creates the",
+          "// regular user first through the public registration endpoint. Each",
+          "// half only fires when its token is missing — clear a token to force",
+          "// it to run again.",
           "const baseUrl = pm.collectionVariables.get('baseUrl');",
           "const email = pm.collectionVariables.get('userEmail');",
           "const password = pm.collectionVariables.get('userPassword');",
@@ -34,27 +31,47 @@
           "  body: { mode: 'raw', raw: JSON.stringify(body) },",
           "});",
           "",
-          "const store = (response) =>",
-          "  pm.collectionVariables.set('accessToken', response.json().accessToken);",
+          "const store = (key) => (response) =>",
+          "  pm.collectionVariables.set(key, response.json().accessToken);",
           "",
-          "pm.sendRequest(post('/auth/login', { email, password }), (loginError, loginResponse) => {",
-          "  if (!loginError && loginResponse.code === 200) {",
-          "    store(loginResponse);",
-          "    return;",
-          "  }",
+          "if (!pm.collectionVariables.get('accessToken')) {",
+          "  pm.sendRequest(post('/auth/login', { email, password }), (loginError, loginResponse) => {",
+          "    if (!loginError && loginResponse.code === 200) {",
+          "      store('accessToken')(loginResponse);",
+          "      return;",
+          "    }",
           "",
-          "  pm.sendRequest(",
-          "    post('/auth/register', { email, name, password }),",
-          "    (registerError, registerResponse) => {",
-          "      if (registerError || registerResponse.code !== 201) {",
-          "        console.warn('Could not obtain a token. Is the API running on ' + baseUrl + '?');",
-          "        return;",
-          "      }",
+          "    pm.sendRequest(",
+          "      post('/auth/register', { email, name, password }),",
+          "      (registerError, registerResponse) => {",
+          "        if (registerError || registerResponse.code !== 201) {",
+          "          console.warn('Could not obtain a user token. Is the API running on ' + baseUrl + '?');",
+          "          return;",
+          "        }",
           "",
-          "      store(registerResponse);",
-          "    },",
-          "  );",
-          "});"
+          "        store('accessToken')(registerResponse);",
+          "      },",
+          "    );",
+          "  });",
+          "}",
+          "",
+          "// The administrator cannot be registered through the API, so this one",
+          "// only ever logs in. If it fails, the seed has not been run.",
+          "if (!pm.collectionVariables.get('adminToken')) {",
+          "  const adminCredentials = {",
+          "    email: pm.collectionVariables.get('adminEmail'),",
+          "    password: pm.collectionVariables.get('adminPassword'),",
+          "  };",
+          "",
+          "  pm.sendRequest(post('/auth/login', adminCredentials), (error, response) => {",
+          "    if (error || response.code !== 200) {",
+          "      console.warn('Could not obtain an admin token. Did you run `pnpm db:seed`?');",
+          "      return;",
+          "    }",
+          "",
+          "    store('adminToken')(response);",
+          "  });",
+          "}"
         ]
       }
     }
@@ -96,7 +113,17 @@
       "type": "string"
     },
     {
+      "key": "adminToken",
+      "value": "",
+      "type": "string"
+    },
+    {
       "key": "newUserEmail",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "filmId",
       "value": "",
       "type": "string"
     }
@@ -232,7 +259,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["auth", "login"]
             },
-            "description": "Swaps `accessToken` for an administrator token. Send this before the admin-only endpoints, and `Login` again to go back to a regular user."
+            "description": "Stores an administrator token in `adminToken`, which the admin-only requests use. Kept apart from `accessToken` so both roles are available at the same time and nothing has to be re-logged in between requests."
           },
           "event": [
             {
@@ -246,7 +273,7 @@
                   "",
                   "pm.test('is the seeded ADMIN account', () => pm.expect(body.user.role).to.eql('ADMIN'));",
                   "",
-                  "pm.collectionVariables.set('accessToken', body.accessToken);"
+                  "pm.collectionVariables.set('adminToken', body.accessToken);"
                 ]
               }
             }
@@ -488,6 +515,402 @@
                   "pm.test('does not reveal whether the account exists', () => {",
                   "  pm.expect(pm.response.json().message).to.eql('Invalid email or password.');",
                   "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Films",
+      "description": "Runs top to bottom: creates a film as administrator, reads it as a regular user, updates it, deletes it and confirms it is gone — so the folder leaves the database exactly as it found it.",
+      "item": [
+        {
+          "name": "List films",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/films?page=1&limit=10&sortBy=episodeId&sortOrder=asc",
+              "host": ["{{baseUrl}}"],
+              "path": ["films"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "10" },
+                { "key": "sortBy", "value": "episodeId" },
+                { "key": "sortOrder", "value": "asc" }
+              ]
+            },
+            "description": "The only film endpoint the brief leaves unrestricted, so it takes no token. Paginated, searchable by title or director, sortable."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('responds 200 without a token', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test('returns a page and its metadata', () => {",
+                  "  pm.expect(body.data).to.be.an('array');",
+                  "  pm.expect(body.meta).to.include.all.keys(",
+                  "    'total', 'page', 'limit', 'totalPages', 'hasNextPage', 'hasPreviousPage',",
+                  "  );",
+                  "});",
+                  "",
+                  "pm.test('honours the requested page size', () => pm.expect(body.meta.limit).to.eql(10));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List films rejects an invalid sort field",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/films?sortBy=password",
+              "host": ["{{baseUrl}}"],
+              "path": ["films"],
+              "query": [{ "key": "sortBy", "value": "password" }]
+            },
+            "description": "Sorting is an allow-list, not a passthrough to the column name."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('responds 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create film (admin)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"The Empire Strikes Back\",\n  \"openingCrawl\": \"It is a dark time for the Rebellion...\",\n  \"director\": \"Irvin Kershner\",\n  \"producer\": \"Gary Kurtz, Rick McCallum\",\n  \"releaseDate\": \"1980-05-21\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/films",
+              "host": ["{{baseUrl}}"],
+              "path": ["films"]
+            },
+            "description": "Administrators only. The episode number is left out on purpose so the request can be sent repeatedly without colliding with a previous run."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('responds 201', () => pm.response.to.have.status(201));",
+                  "",
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test('films created here are marked LOCAL', () => pm.expect(body.source).to.eql('LOCAL'));",
+                  "",
+                  "pm.collectionVariables.set('filmId', body.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create film as a regular user returns 403",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Return of the Jedi\",\n  \"openingCrawl\": \"Luke Skywalker has returned...\",\n  \"director\": \"Richard Marquand\",\n  \"producer\": \"Howard Kazanjian\",\n  \"releaseDate\": \"1983-05-25\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/films",
+              "host": ["{{baseUrl}}"],
+              "path": ["films"]
+            },
+            "description": "Same payload, a regular user's token. This is the request that proves role-based access control is actually wired to the endpoint."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('responds 403', () => pm.response.to.have.status(403));",
+                  "",
+                  "pm.test('says which role is required', () => {",
+                  "  pm.expect(pm.response.json().message).to.include('ADMIN');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create film without a token returns 401",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Return of the Jedi\",\n  \"openingCrawl\": \"Luke Skywalker has returned...\",\n  \"director\": \"Richard Marquand\",\n  \"producer\": \"Howard Kazanjian\",\n  \"releaseDate\": \"1983-05-25\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/films",
+              "host": ["{{baseUrl}}"],
+              "path": ["films"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('responds 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get film by id (regular user)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/films/{{filmId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["films", "{{filmId}}"]
+            },
+            "description": "The brief restricts the detail endpoint to regular users, and it is implemented literally."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('responds 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "pm.test('returns the film that was just created', () => {",
+                  "  pm.expect(pm.response.json().id).to.eql(pm.collectionVariables.get('filmId'));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get film by id as administrator returns 403",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/films/{{filmId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["films", "{{filmId}}"]
+            },
+            "description": "Deliberate: the brief says only regular users reach this endpoint, so an administrator is turned away. See the design notes in the README."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('responds 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get film by id without a token returns 401",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/films/{{filmId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["films", "{{filmId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('responds 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update film (admin)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"director\": \"Irvin Kershner (Special Edition)\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/films/{{filmId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["films", "{{filmId}}"]
+            },
+            "description": "Partial update: only the fields present in the body change."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('responds 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test('applies the change', () => pm.expect(body.director).to.eql('Irvin Kershner (Special Edition)'));",
+                  "pm.test('leaves the untouched fields alone', () => pm.expect(body.title).to.eql('The Empire Strikes Back'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update film as a regular user returns 403",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"director\": \"Nobody\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/films/{{filmId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["films", "{{filmId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('responds 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Delete film as a regular user returns 403",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/films/{{filmId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["films", "{{filmId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('responds 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Delete film (admin)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "DELETE",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/films/{{filmId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["films", "{{filmId}}"]
+            },
+            "description": "Cleans up the film created at the top of the folder, so the run is repeatable."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('responds 204 with no body', () => {",
+                  "  pm.response.to.have.status(204);",
+                  "  pm.expect(pm.response.text()).to.be.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get a deleted film returns 404",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/films/{{filmId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["films", "{{filmId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('responds 404', () => pm.response.to.have.status(404));"
                 ]
               }
             }

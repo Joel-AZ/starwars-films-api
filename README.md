@@ -59,8 +59,17 @@ Everything lives under the `/api` prefix.
 | `POST` | `/api/auth/register` | Public |
 | `POST` | `/api/auth/login` | Public |
 | `GET` | `/api/auth/me` | Authenticated |
+| `GET` | `/api/films` | Public |
+| `GET` | `/api/films/:id` | `USER` |
+| `POST` | `/api/films` | `ADMIN` |
+| `PATCH` | `/api/films/:id` | `ADMIN` |
+| `DELETE` | `/api/films/:id` | `ADMIN` |
 
-Film management and Star Wars synchronization are in progress.
+Synchronization with the Star Wars API is in progress.
+
+`GET /api/films` supports `page`, `limit` (capped at 100), `search` (case-insensitive,
+against the title and the director), `sortBy` and `sortOrder`, and answers with the
+page plus the metadata needed to navigate it.
 
 ### Roles
 
@@ -124,6 +133,8 @@ src/
   auth/           strategy, guards, decorators, DTOs
   common/         cross-cutting helpers shared by every module
   config/         environment validation and frozen config objects
+  films/          film catalogue: CRUD, search, pagination
+  filters/        exception filters mounted globally
   health/         liveness and database connectivity
   prisma/         PrismaService, registered globally
   users/          user persistence
@@ -140,3 +151,48 @@ Controllers only route and delegate; services hold the business logic and talk t
 Prisma directly. There is no repository layer, because at this size it would add
 indirection without removing any duplication. Unit tests live next to the file
 they cover, so a module and its tests are always read together.
+
+## Design notes
+
+Decisions that are not obvious from the code, and the reasoning behind them.
+
+**The film detail endpoint turns administrators away.** The brief says the detail
+endpoint is for "regular users", and it is implemented literally: `GET /films/:id`
+carries `@Auth(Role.USER)`, so an administrator gets a 403. It reads oddly for a
+real product, and if the intent was "any authenticated user" it is one argument on
+one decorator. It was left literal because the brief asks for the requested
+endpoints to be respected.
+
+**Only the film list is public.** Every other film endpoint declares who may reach
+it; the list is the one the brief leaves unqualified, so it takes no token.
+
+**Registration cannot produce an administrator.** The role is assigned in the
+service and never read from the payload, and the validation pipe rejects unknown
+properties outright — so `{"role": "ADMIN"}` in a registration body is a 400, not a
+privilege escalation. There is a test that sends exactly that and then asserts the
+database still holds no administrators.
+
+**Tokens are resolved against the database on every request.** The JWT strategy
+re-reads the user instead of trusting the payload. It costs one query per request
+and buys immediate revocation: deleting an account invalidates its tokens now,
+rather than whenever they happen to expire.
+
+**Failed logins take the same time whether or not the account exists.** When the
+email is unknown the password is still compared, against a fixed dummy hash. Skipping
+that comparison would leak which addresses are registered through response timing.
+
+**Database errors are translated in one place.** `PrismaExceptionFilter` maps
+Prisma's codes onto HTTP — a unique-constraint violation becomes a 409, a missing
+record a 404 — using the same body shape Nest produces everywhere else. Without it a
+duplicate episode number would surface as an opaque 500.
+
+**swapi.dev was unreachable during development**, so `SWAPI_BASE_URL` defaults to
+the `swapi.info` mirror and the client accepts both response shapes (a bare array
+and the classic `{ results }` envelope).
+
+### What is deliberately not here
+
+No repository layer, no CQRS, no caching, no microservices. At this size each of
+them would add structure without removing a problem. The same goes for refresh
+tokens: the brief asks for an access token, and rotation is a meaningful amount of
+surface for something nothing here needs yet.
