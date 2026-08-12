@@ -5,6 +5,7 @@ import {
   HttpCode,
   HttpStatus,
   Post,
+  UseGuards,
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
@@ -13,8 +14,11 @@ import {
   ApiOkResponse,
   ApiOperation,
   ApiTags,
+  ApiTooManyRequestsResponse,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
+import { ThrottlerGuard } from '@nestjs/throttler';
+import { THROTTLE_CONFIG } from '../config/throttle.config';
 import { Auth } from './auth.decorator';
 import { AuthService } from './auth.service';
 import { AuthResponseDto, UserProfileDto } from './dto/auth-response.dto';
@@ -25,6 +29,12 @@ import type { CurrentUser } from './jwt-payload.interface';
 
 @ApiTags('Auth')
 @Controller('auth')
+// These are the only routes worth guessing at, so they are the only ones rate
+// limited. Everything else already needs a token to get anywhere.
+@UseGuards(ThrottlerGuard)
+@ApiTooManyRequestsResponse({
+  description: `More than ${THROTTLE_CONFIG.limit} requests per minute from the same address`,
+})
 export class AuthController {
   constructor(private readonly auth: AuthService) {}
 

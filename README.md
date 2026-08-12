@@ -1,5 +1,7 @@
 # Star Wars Films API
 
+[![CI](https://github.com/Joel-AZ/starwars-films-api/actions/workflows/ci.yml/badge.svg)](https://github.com/Joel-AZ/starwars-films-api/actions/workflows/ci.yml)
+
 REST API for managing films, built with NestJS. It exposes JWT authentication with
 role-based access control and keeps a local film catalogue in sync with the public
 Star Wars API.
@@ -162,6 +164,7 @@ real data.
 | `pnpm start:dev` | Development server with hot reload |
 | `pnpm build` / `pnpm start:prod` | Compile and run the production build |
 | `pnpm lint` / `pnpm format` | ESLint (with `--fix`) and Prettier |
+| `pnpm lint:check` / `pnpm typecheck` | The same checks without writing anything, as CI runs them |
 | `pnpm db:migrate` | Create and apply a migration in development |
 | `pnpm db:deploy` | Apply pending migrations (production) |
 | `pnpm db:test:deploy` | Apply migrations to the test database |
@@ -222,6 +225,12 @@ rather than whenever they happen to expire.
 **Failed logins take the same time whether or not the account exists.** When the
 email is unknown the password is still compared, against a fixed dummy hash. Skipping
 that comparison would leak which addresses are registered through response timing.
+
+**Only the credential endpoints are rate limited.** Register and login accept ten
+requests per minute per address and answer `429` after that; everything else already
+needs a token to get anywhere, so throttling it would cost more than it protects. The
+limit is switched off under test, where the suite fires dozens of logins in seconds
+and would end up throttling itself instead of checking behaviour.
 
 **Database errors are translated in one place.** `PrismaExceptionFilter` maps
 Prisma's codes onto HTTP — a unique-constraint violation becomes a 409, a missing

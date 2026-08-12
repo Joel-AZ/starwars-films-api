@@ -25,7 +25,9 @@
     "db:reset": "prisma migrate reset --force",
     "db:seed": "prisma db seed",
     "db:test:deploy": "dotenv -e .env.test -- prisma migrate deploy",
-    "db:test:seed": "dotenv -e .env.test -- prisma db seed"
+    "db:test:seed": "dotenv -e .env.test -- prisma db seed",
+    "lint:check": "eslint \"{src,apps,libs,test}/**/*.ts\"",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
