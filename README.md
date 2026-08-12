@@ -23,10 +23,28 @@ pnpm install                    # postinstall generates the Prisma client
 cp .env.example .env            # edit JWT_SECRET; the defaults work as-is
 docker compose up -d            # PostgreSQL on port 5433
 pnpm db:migrate                 # apply migrations
+pnpm db:seed                    # two accounts to log in with
 pnpm start:dev                  # http://localhost:3000
 ```
 
 Then open **http://localhost:3000/api/docs** for the interactive documentation.
+
+### Accounts
+
+| Role | Email | Password | Where it comes from |
+| --- | --- | --- | --- |
+| `ADMIN` | `admin@starwars.test` | `Password123!` | `pnpm db:seed` |
+| `USER` | anything you like | — | `POST /api/auth/register` |
+
+The seed creates the administrator and nothing else. Regular users are created
+the way the API intends, through the public registration endpoint — but an
+administrator cannot be, because registration hardcodes the `USER` role so that
+nobody can self-promote by adding a field to the payload. That leaves the seed as
+the only place the first administrator can come from. It is idempotent, so
+running it again just resets that one account.
+
+Log in through `/api/auth/login`, click *Authorize* in Swagger, paste the token,
+and every endpoint is callable from the browser.
 
 Port 5433 instead of the usual 5432 is deliberate: it avoids clashing with a
 PostgreSQL you may already have running locally.
@@ -55,10 +73,13 @@ adding a field to the registration payload.
 
 - **Swagger UI** at `/api/docs`. Log in, click *Authorize*, paste the token once,
   and every protected endpoint is callable from the browser.
-- **Postman collection** in [`postman/`](postman). Import it and run it top to
-  bottom with the Collection Runner: each request carries its own assertions,
-  `Register` generates a fresh email so the run is repeatable, and `Login` stores
-  the token for the requests that need it.
+- **Postman collection** in [`postman/`](postman). Everything is pre-filled, so
+  any request works on its own — open one, press Send, in any order. When no
+  token is stored yet a collection-level script logs in first, and on a fresh
+  database it creates the regular user through `/auth/register` before doing so.
+  `Register` generates a new email on every send, so it never collides with a
+  previous run, and the whole collection is also runnable top to bottom with the
+  Collection Runner.
 
 ```bash
 pnpm dlx newman run postman/starwars-films-api.postman_collection.json
@@ -98,11 +119,11 @@ real data.
 ## Project structure
 
 ```
-prisma/           schema and migrations
+prisma/           schema, migrations and seed
 src/
-  auth/           authentication, guards, decorators, strategies
+  auth/           strategy, guards, decorators, DTOs
   common/         cross-cutting helpers shared by every module
-  config/         environment validation
+  config/         environment validation and frozen config objects
   health/         liveness and database connectivity
   prisma/         PrismaService, registered globally
   users/          user persistence
@@ -110,7 +131,12 @@ test/             e2e suites and their harness
 postman/          exported collection
 ```
 
-Each feature is a self-contained module: controller for routing, service for
-business logic, DTOs for the contract. Services talk to Prisma directly — there is
-no repository layer, because at this size it would add indirection without
-removing any duplication.
+Each feature is a self-contained module and stays flat inside its own folder,
+with `dto/` as the only subdirectory — the same layout the Nest CLI generates.
+Files are named after what they are: `*.module.ts`, `*.controller.ts`,
+`*.service.ts`, `*.guard.ts`, `*.strategy.ts`, `*.decorator.ts`, `*.config.ts`.
+
+Controllers only route and delegate; services hold the business logic and talk to
+Prisma directly. There is no repository layer, because at this size it would add
+indirection without removing any duplication. Unit tests live next to the file
+they cover, so a module and its tests are always read together.

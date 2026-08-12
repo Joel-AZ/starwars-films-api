@@ -5,19 +5,21 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { compare, hash, hashSync } from 'bcryptjs';
+import { AUTH_CONFIG } from '../config/auth.config';
 import type { User } from '../generated/prisma/client';
 import { Role } from '../generated/prisma/enums';
 import { UsersService } from '../users/users.service';
-import type { JwtPayload } from './auth.types';
 import { AuthResponseDto, UserProfileDto } from './dto/auth-response.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
-
-const BCRYPT_ROUNDS = 10;
+import type { JwtPayload } from './jwt-payload.interface';
 
 // Compared against when the email does not exist, so a failed login costs the
 // same time whether or not the account is real.
-const DUMMY_PASSWORD_HASH = hashSync('no-such-account', BCRYPT_ROUNDS);
+const DUMMY_PASSWORD_HASH = hashSync(
+  'no-such-account',
+  AUTH_CONFIG.bcryptRounds,
+);
 
 @Injectable()
 export class AuthService {
@@ -33,10 +35,12 @@ export class AuthService {
       throw new ConflictException('That email is already registered.');
     }
 
+    // The role is set here and never taken from the payload: an account can
+    // only ever be created as USER through the public API.
     const user = await this.users.create({
       email: dto.email,
       name: dto.name,
-      password: await hash(dto.password, BCRYPT_ROUNDS),
+      password: await hash(dto.password, AUTH_CONFIG.bcryptRounds),
       role: Role.USER,
     });
 

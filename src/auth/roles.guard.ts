@@ -6,10 +6,12 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { Role } from '../../generated/prisma/enums';
-import type { AuthenticatedUser } from '../auth.types';
-import { ROLES_KEY } from '../decorators/auth.decorator';
+import { Role } from '../generated/prisma/enums';
+import { ROLES_KEY } from './auth.decorator';
+import type { CurrentUser } from './jwt-payload.interface';
 
+// Runs after JwtAuthGuard, so request.user is already resolved. Declaring no
+// roles means "any authenticated user".
 @Injectable()
 export class RolesGuard implements CanActivate {
   constructor(private readonly reflector: Reflector) {}
@@ -26,7 +28,7 @@ export class RolesGuard implements CanActivate {
 
     const { user } = context
       .switchToHttp()
-      .getRequest<{ user?: AuthenticatedUser }>();
+      .getRequest<{ user?: CurrentUser }>();
 
     if (!user) {
       throw new UnauthorizedException();

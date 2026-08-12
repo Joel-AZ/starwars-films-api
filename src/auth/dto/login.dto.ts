@@ -2,17 +2,18 @@ import { ApiProperty } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import { IsEmail, IsString, MaxLength, MinLength } from 'class-validator';
 import { normalizeEmail } from '../../common/transforms';
+import { AUTH_CONFIG } from '../../config/auth.config';
 
 export class LoginDto {
-  @ApiProperty({ example: 'luke@rebellion.org' })
+  @ApiProperty({ example: 'user@starwars.test' })
   @Transform(normalizeEmail)
   @IsEmail()
   @MaxLength(255)
   email!: string;
 
-  @ApiProperty({ example: 'the-force-is-strong' })
+  @ApiProperty({ example: 'Password123!' })
   @IsString()
-  @MinLength(8)
-  @MaxLength(72)
+  @MinLength(AUTH_CONFIG.minPasswordLength)
+  @MaxLength(AUTH_CONFIG.maxPasswordBytes)
   password!: string;
 }

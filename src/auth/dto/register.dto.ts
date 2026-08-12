@@ -2,6 +2,7 @@ import { ApiProperty } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import { IsEmail, IsString, MaxLength, MinLength } from 'class-validator';
 import { normalizeEmail, trimmed } from '../../common/transforms';
+import { AUTH_CONFIG } from '../../config/auth.config';
 
 export class RegisterDto {
   @ApiProperty({ example: 'luke@rebellion.org', maxLength: 255 })
@@ -19,13 +20,13 @@ export class RegisterDto {
 
   @ApiProperty({
     example: 'the-force-is-strong',
-    minLength: 8,
-    maxLength: 72,
+    minLength: AUTH_CONFIG.minPasswordLength,
+    maxLength: AUTH_CONFIG.maxPasswordBytes,
     description:
       'Capped at 72 bytes because bcrypt silently truncates anything longer.',
   })
   @IsString()
-  @MinLength(8)
-  @MaxLength(72)
+  @MinLength(AUTH_CONFIG.minPasswordLength)
+  @MaxLength(AUTH_CONFIG.maxPasswordBytes)
   password!: string;
 }

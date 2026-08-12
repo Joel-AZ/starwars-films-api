@@ -15,13 +15,13 @@ import {
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
+import { Auth } from './auth.decorator';
 import { AuthService } from './auth.service';
-import type { AuthenticatedUser } from './auth.types';
-import { Auth } from './decorators/auth.decorator';
-import { CurrentUser } from './decorators/current-user.decorator';
 import { AuthResponseDto, UserProfileDto } from './dto/auth-response.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
+import { GetUser } from './get-user.decorator';
+import type { CurrentUser } from './jwt-payload.interface';
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -56,7 +56,7 @@ export class AuthController {
   @Auth()
   @ApiOperation({ summary: 'Return the profile behind the current token' })
   @ApiOkResponse({ type: UserProfileDto })
-  me(@CurrentUser() user: AuthenticatedUser): Promise<UserProfileDto> {
+  me(@GetUser() user: CurrentUser): Promise<UserProfileDto> {
     return this.auth.profile(user.id);
   }
 }

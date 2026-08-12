@@ -1,9 +1,64 @@
 {
   "info": {
     "name": "Star Wars Films API",
-    "description": "Film management API built with NestJS.\n\nPoint `baseUrl` at any environment and the whole collection follows. Run it top to bottom with the Collection Runner: every request carries its own assertions, `Register` generates a fresh email so the run is repeatable, and `Login` stores the token in `accessToken` for the requests that need it.",
+    "description": "Film management API built with NestJS.\n\nEverything is pre-filled — open any request and press Send, in any order. When `accessToken` is empty a collection-level script logs in as the regular user first, and if that account does not exist yet it creates it through `POST /auth/register`, the same endpoint any client would use.\n\nThe administrator is the one account that cannot come from the API: registration hardcodes the USER role so nobody can self-promote. Run `pnpm db:seed` once to create it.\n\n| Role | Email | Password | Created by |\n| --- | --- | --- | --- |\n| ADMIN | admin@starwars.test | Password123! | `pnpm db:seed` |\n| USER | user@starwars.test | Password123! | the collection, via `/auth/register` |\n\nPoint `baseUrl` somewhere else and the whole collection follows.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{accessToken}}", "type": "string" }]
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Makes every protected request runnable on its own: logs in as the",
+          "// regular user, and on a fresh database creates that account first",
+          "// through the public registration endpoint. Only fires when there is",
+          "// no token yet — clear `accessToken` to force it to run again.",
+          "if (pm.collectionVariables.get('accessToken')) {",
+          "  return;",
+          "}",
+          "",
+          "const baseUrl = pm.collectionVariables.get('baseUrl');",
+          "const email = pm.collectionVariables.get('userEmail');",
+          "const password = pm.collectionVariables.get('userPassword');",
+          "const name = pm.collectionVariables.get('userName');",
+          "",
+          "const post = (path, body) => ({",
+          "  url: `${baseUrl}${path}`,",
+          "  method: 'POST',",
+          "  header: { 'Content-Type': 'application/json' },",
+          "  body: { mode: 'raw', raw: JSON.stringify(body) },",
+          "});",
+          "",
+          "const store = (response) =>",
+          "  pm.collectionVariables.set('accessToken', response.json().accessToken);",
+          "",
+          "pm.sendRequest(post('/auth/login', { email, password }), (loginError, loginResponse) => {",
+          "  if (!loginError && loginResponse.code === 200) {",
+          "    store(loginResponse);",
+          "    return;",
+          "  }",
+          "",
+          "  pm.sendRequest(",
+          "    post('/auth/register', { email, name, password }),",
+          "    (registerError, registerResponse) => {",
+          "      if (registerError || registerResponse.code !== 201) {",
+          "        console.warn('Could not obtain a token. Is the API running on ' + baseUrl + '?');",
+          "        return;",
+          "      }",
+          "",
+          "      store(registerResponse);",
+          "    },",
+          "  );",
+          "});"
+        ]
+      }
+    }
+  ],
   "variable": [
     {
       "key": "baseUrl",
@@ -11,13 +66,8 @@
       "type": "string"
     },
     {
-      "key": "accessToken",
-      "value": "",
-      "type": "string"
-    },
-    {
       "key": "userEmail",
-      "value": "",
+      "value": "user@starwars.test",
       "type": "string"
     },
     {
@@ -27,7 +77,27 @@
     },
     {
       "key": "userPassword",
-      "value": "the-force-is-strong",
+      "value": "Password123!",
+      "type": "string"
+    },
+    {
+      "key": "adminEmail",
+      "value": "admin@starwars.test",
+      "type": "string"
+    },
+    {
+      "key": "adminPassword",
+      "value": "Password123!",
+      "type": "string"
+    },
+    {
+      "key": "accessToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "newUserEmail",
+      "value": "",
       "type": "string"
     }
   ],
@@ -38,6 +108,7 @@
         {
           "name": "Health check",
           "request": {
+            "auth": { "type": "noauth" },
             "method": "GET",
             "header": [],
             "url": {
@@ -69,6 +140,7 @@
         {
           "name": "Unknown route returns 404",
           "request": {
+            "auth": { "type": "noauth" },
             "method": "GET",
             "header": [],
             "url": {
@@ -104,154 +176,9 @@
       "name": "Auth",
       "item": [
         {
-          "name": "Register",
-          "request": {
-            "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"name\": \"{{userName}}\",\n  \"password\": \"{{userPassword}}\"\n}",
-              "options": { "raw": { "language": "json" } }
-            },
-            "url": {
-              "raw": "{{baseUrl}}/auth/register",
-              "host": ["{{baseUrl}}"],
-              "path": ["auth", "register"]
-            },
-            "description": "Creates an account. New accounts always get the USER role — administrators come from the database seed, never from this endpoint."
-          },
-          "event": [
-            {
-              "listen": "prerequest",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "// A fresh address per run keeps the collection repeatable.",
-                  "pm.collectionVariables.set('userEmail', `luke-${Date.now()}@rebellion.org`);"
-                ]
-              }
-            },
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('responds 201', () => pm.response.to.have.status(201));",
-                  "",
-                  "const body = pm.response.json();",
-                  "",
-                  "pm.test('returns a bearer token', () => {",
-                  "  pm.expect(body.accessToken).to.be.a('string').and.not.empty;",
-                  "  pm.expect(body.tokenType).to.eql('Bearer');",
-                  "});",
-                  "",
-                  "pm.test('new accounts get the USER role', () => pm.expect(body.user.role).to.eql('USER'));",
-                  "pm.test('never leaks the password', () => pm.expect(pm.response.text()).to.not.include('password'));",
-                  "",
-                  "pm.collectionVariables.set('accessToken', body.accessToken);"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Register with a duplicate email returns 409",
-          "request": {
-            "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"name\": \"{{userName}}\",\n  \"password\": \"{{userPassword}}\"\n}",
-              "options": { "raw": { "language": "json" } }
-            },
-            "url": {
-              "raw": "{{baseUrl}}/auth/register",
-              "host": ["{{baseUrl}}"],
-              "path": ["auth", "register"]
-            },
-            "description": "Re-sends the address the previous request just registered."
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('responds 409', () => pm.response.to.have.status(409));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Register with an invalid payload returns 400",
-          "request": {
-            "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"email\": \"not-an-email\",\n  \"name\": \"L\",\n  \"password\": \"short\"\n}",
-              "options": { "raw": { "language": "json" } }
-            },
-            "url": {
-              "raw": "{{baseUrl}}/auth/register",
-              "host": ["{{baseUrl}}"],
-              "path": ["auth", "register"]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('responds 400', () => pm.response.to.have.status(400));",
-                  "",
-                  "pm.test('reports every invalid field', () => {",
-                  "  const message = JSON.stringify(pm.response.json().message);",
-                  "  pm.expect(message).to.include('email');",
-                  "  pm.expect(message).to.include('password');",
-                  "});"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Login with a wrong password returns 401",
-          "request": {
-            "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"password\": \"definitely-not-it\"\n}",
-              "options": { "raw": { "language": "json" } }
-            },
-            "url": {
-              "raw": "{{baseUrl}}/auth/login",
-              "host": ["{{baseUrl}}"],
-              "path": ["auth", "login"]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('responds 401', () => pm.response.to.have.status(401));",
-                  "",
-                  "pm.test('does not reveal whether the account exists', () => {",
-                  "  pm.expect(pm.response.json().message).to.eql('Invalid email or password.');",
-                  "});"
-                ]
-              }
-            }
-          ]
-        },
-        {
           "name": "Login",
           "request": {
+            "auth": { "type": "noauth" },
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
@@ -264,7 +191,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["auth", "login"]
             },
-            "description": "Stores the returned token in the `accessToken` collection variable, so every protected request below picks it up automatically."
+            "description": "Logs in as the regular user and stores the token in `accessToken`, which every protected request inherits. The account is created by the collection through `/auth/register` the first time it is needed."
           },
           "event": [
             {
@@ -276,9 +203,83 @@
                   "",
                   "const body = pm.response.json();",
                   "",
-                  "pm.test('returns a bearer token', () => pm.expect(body.accessToken).to.be.a('string').and.not.empty);",
+                  "pm.test('returns a bearer token', () => {",
+                  "  pm.expect(body.accessToken).to.be.a('string').and.not.empty;",
+                  "  pm.expect(body.tokenType).to.eql('Bearer');",
+                  "});",
+                  "",
+                  "pm.test('is a regular USER account', () => pm.expect(body.user.role).to.eql('USER'));",
                   "",
                   "pm.collectionVariables.set('accessToken', body.accessToken);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login as administrator",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "login"]
+            },
+            "description": "Swaps `accessToken` for an administrator token. Send this before the admin-only endpoints, and `Login` again to go back to a regular user."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('responds 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test('is the seeded ADMIN account', () => pm.expect(body.user.role).to.eql('ADMIN'));",
+                  "",
+                  "pm.collectionVariables.set('accessToken', body.accessToken);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Me",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/me",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "me"]
+            },
+            "description": "Returns the profile behind the current token. Resolved against the database on every call, so a token whose user was deleted stops working immediately."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('responds 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test('returns a profile', () => {",
+                  "  pm.expect(body.email).to.be.a('string').and.not.empty;",
+                  "  pm.expect(body.role).to.be.oneOf(['ADMIN', 'USER']);",
+                  "});",
+                  "",
+                  "pm.test('never leaks the password', () => pm.expect(pm.response.text()).to.not.include('password'));"
                 ]
               }
             }
@@ -309,21 +310,71 @@
           ]
         },
         {
-          "name": "Me",
+          "name": "Register",
           "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/auth/me",
-              "host": ["{{baseUrl}}"],
-              "path": ["auth", "me"]
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{newUserEmail}}\",\n  \"name\": \"Wedge Antilles\",\n  \"password\": \"the-force-is-strong\"\n}",
+              "options": { "raw": { "language": "json" } }
             },
-            "description": "Resolves the token against the database on every call, so a token whose user was deleted stops working immediately."
+            "url": {
+              "raw": "{{baseUrl}}/auth/register",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "register"]
+            },
+            "description": "Creates an account. The email is generated fresh on every send, so this request always succeeds and never collides with a previous run. New accounts always get the USER role."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('newUserEmail', `wedge-${Date.now()}@rebellion.org`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('responds 201', () => pm.response.to.have.status(201));",
+                  "",
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test('returns a bearer token', () => {",
+                  "  pm.expect(body.accessToken).to.be.a('string').and.not.empty;",
+                  "  pm.expect(body.tokenType).to.eql('Bearer');",
+                  "});",
+                  "",
+                  "pm.test('new accounts get the USER role', () => pm.expect(body.user.role).to.eql('USER'));",
+                  "pm.test('never leaks the password', () => pm.expect(pm.response.text()).to.not.include('password'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Register with a duplicate email returns 409",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"name\": \"Luke Skywalker\",\n  \"password\": \"the-force-is-strong\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/register",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "register"]
+            },
+            "description": "Re-registers the regular user, which the collection guarantees exists, so this request is standalone and repeatable."
           },
           "event": [
             {
@@ -331,16 +382,112 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('responds 200', () => pm.response.to.have.status(200));",
+                  "pm.test('responds 409', () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Register with an invalid payload returns 400",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"not-an-email\",\n  \"name\": \"L\",\n  \"password\": \"short\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/register",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "register"]
+            },
+            "description": "Every field is wrong on purpose: the response should list all three problems at once, not just the first."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('responds 400', () => pm.response.to.have.status(400));",
                   "",
-                  "const body = pm.response.json();",
+                  "const message = JSON.stringify(pm.response.json().message);",
                   "",
-                  "pm.test('returns the profile behind the token', () => {",
-                  "  pm.expect(body.email).to.eql(pm.collectionVariables.get('userEmail'));",
-                  "  pm.expect(body.role).to.eql('USER');",
-                  "});",
+                  "pm.test('reports every invalid field at once', () => {",
+                  "  pm.expect(message).to.include('email');",
+                  "  pm.expect(message).to.include('name');",
+                  "  pm.expect(message).to.include('password');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Register cannot grant the ADMIN role",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"sneaky@empire.gov\",\n  \"name\": \"Sheev Palpatine\",\n  \"password\": \"unlimited-power\",\n  \"role\": \"ADMIN\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/register",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "register"]
+            },
+            "description": "Tries to self-promote by smuggling a `role` field into the payload. The validation pipe strips unknown properties and rejects the request, so no account is created at all."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('responds 400', () => pm.response.to.have.status(400));",
                   "",
-                  "pm.test('never leaks the password', () => pm.expect(pm.response.text()).to.not.include('password'));"
+                  "pm.test('rejects the unknown property explicitly', () => {",
+                  "  pm.expect(JSON.stringify(pm.response.json().message)).to.include('role');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login with a wrong password returns 401",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"password\": \"definitely-not-it\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "login"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('responds 401', () => pm.response.to.have.status(401));",
+                  "",
+                  "pm.test('does not reveal whether the account exists', () => {",
+                  "  pm.expect(pm.response.json().message).to.eql('Invalid email or password.');",
+                  "});"
                 ]
               }
             }

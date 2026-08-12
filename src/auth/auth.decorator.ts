@@ -4,12 +4,15 @@ import {
   ApiForbiddenResponse,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
-import { Role } from '../../generated/prisma/enums';
-import { JwtAuthGuard } from '../guards/jwt-auth.guard';
-import { RolesGuard } from '../guards/roles.guard';
+import { Role } from '../generated/prisma/enums';
+import { JwtAuthGuard } from './jwt-auth.guard';
+import { RolesGuard } from './roles.guard';
 
 export const ROLES_KEY = 'roles';
 
+// @Auth() requires a valid token; @Auth(Role.ADMIN) also requires the role.
+// Bundles the guards with their Swagger counterparts so the documentation can
+// never drift from what the endpoint actually enforces.
 export function Auth(...roles: Role[]): MethodDecorator & ClassDecorator {
   return applyDecorators(
     SetMetadata(ROLES_KEY, roles),

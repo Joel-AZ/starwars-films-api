@@ -4,11 +4,11 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { Role } from '../../generated/prisma/enums';
-import type { AuthenticatedUser } from '../auth.types';
+import { Role } from '../generated/prisma/enums';
+import type { CurrentUser } from './jwt-payload.interface';
 import { RolesGuard } from './roles.guard';
 
-const contextFor = (user?: Partial<AuthenticatedUser>): ExecutionContext =>
+const contextFor = (user?: Partial<CurrentUser>): ExecutionContext =>
   ({
     switchToHttp: () => ({ getRequest: () => ({ user }) }),
     getHandler: () => jest.fn(),
