@@ -89,17 +89,28 @@ The same job also runs on a schedule, off by default:
 
 | Variable | Default | What it does |
 | --- | --- | --- |
-| `SWAPI_BASE_URL` | `https://swapi.info/api` | Which mirror to import from |
+| `SWAPI_BASE_URL` | `https://www.swapi.tech/api` | Which mirror to import from |
 | `SWAPI_SYNC_ENABLED` | `false` | Whether to register the scheduled job at all |
 | `SWAPI_SYNC_CRON` | `0 3 * * *` | When it runs, once registered |
 
 It ships disabled on purpose: nobody wants a background job hitting a third-party
 API from a laptop or during a test run. The endpoint is always there to force one.
 
-`swapi.dev` was unreachable while this was written, so the default points at the
-`swapi.info` mirror. The two answer with different shapes — a bare array and the
-classic `{ results }` envelope — and the client accepts both, so `SWAPI_BASE_URL` can
-be pointed at either.
+### The three mirrors
+
+The public Star Wars API is served from several hosts that disagree about where the
+list of films lives:
+
+| Host | Shape |
+| --- | --- |
+| `swapi.tech` | `{ result: [ { properties: { title, episode_id, … } } ] }` |
+| `swapi.dev` | `{ results: [ { title, episode_id, … } ] }` |
+| `swapi.info` | `[ { title, episode_id, … } ]` |
+
+The client accepts all three and normalizes them to one internal type, so
+`SWAPI_BASE_URL` can be pointed at any of them without touching code. That is not
+gold-plating: `swapi.dev` was unreachable during development, and having the mapping
+in one tested function meant switching mirrors was a one-line environment change.
 
 ### Roles
 
@@ -224,8 +235,8 @@ sits on the films controller because that is where the route belongs, and delega
 
 **Tests never reach the real Star Wars API.** The e2e suite swaps the client for a
 stub, so it is deterministic and works offline. The live integration was verified by
-hand instead — twice in a row, to confirm the second run reports everything as
-unchanged.
+hand instead — twice in a row against `swapi.tech`, to confirm the second run reports
+everything as unchanged.
 
 ### What is deliberately not here
 

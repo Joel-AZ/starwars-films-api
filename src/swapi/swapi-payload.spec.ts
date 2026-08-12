@@ -26,12 +26,35 @@ describe('normalizeFilmsPayload', () => {
     expect(normalizeFilmsPayload(payload)).toHaveLength(1);
   });
 
-  it('returns both mirrors identically', () => {
+  it('accepts films nested under properties, the shape swapi.tech returns', () => {
+    const payload = {
+      message: 'ok',
+      result: [{ uid: '1', _id: 'abc', __v: 0, properties: aFilm() }],
+    };
+
+    expect(normalizeFilmsPayload(payload)).toHaveLength(1);
+  });
+
+  it('returns the same films whichever mirror answered', () => {
     const film = aFilm();
 
-    expect(normalizeFilmsPayload([film])).toEqual(
-      normalizeFilmsPayload({ results: [film] }),
-    );
+    const fromInfo = normalizeFilmsPayload([film]);
+    const fromDev = normalizeFilmsPayload({ results: [film] });
+    const fromTech = normalizeFilmsPayload({
+      message: 'ok',
+      result: [{ uid: '1', properties: film }],
+    });
+
+    expect(fromInfo).toEqual(fromDev);
+    expect(fromDev).toEqual(fromTech);
+  });
+
+  it('keeps only the film fields, dropping the ids swapi.tech puts alongside', () => {
+    const payload = {
+      result: [{ uid: '1', _id: 'abc', properties: aFilm() }],
+    };
+
+    expect(normalizeFilmsPayload(payload)[0]).not.toHaveProperty('uid');
   });
 
   it('drops entries that are missing required fields', () => {

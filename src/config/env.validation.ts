@@ -46,7 +46,7 @@ export class EnvironmentVariables {
   JWT_EXPIRES_IN = '1h';
 
   @IsUrl({ require_tld: false })
-  SWAPI_BASE_URL = 'https://swapi.info/api';
+  SWAPI_BASE_URL = 'https://www.swapi.tech/api';
 
   @Transform(toBoolean)
   @IsBoolean()

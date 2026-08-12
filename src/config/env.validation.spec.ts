@@ -12,7 +12,7 @@ describe('validate (environment)', () => {
     expect(env.NODE_ENV).toBe(NodeEnv.Development);
     expect(env.PORT).toBe(3000);
     expect(env.JWT_EXPIRES_IN).toBe('1h');
-    expect(env.SWAPI_BASE_URL).toBe('https://swapi.info/api');
+    expect(env.SWAPI_BASE_URL).toBe('https://www.swapi.tech/api');
     expect(env.SWAPI_SYNC_ENABLED).toBe(false);
     expect(env.SWAPI_SYNC_CRON).toBe('0 3 * * *');
   });
