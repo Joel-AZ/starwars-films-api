@@ -253,3 +253,9 @@ No repository layer, no CQRS, no caching, no microservices. At this size each of
 them would add structure without removing a problem. The same goes for refresh
 tokens: the brief asks for an access token, and rotation is a meaningful amount of
 surface for something nothing here needs yet.
+
+**There is no hosted instance.** Running it locally is four commands and the
+quickstart above is the whole story, so the effort went into making that path
+frictionless — a seeded administrator, a Postman collection that works on the first
+send, and Swagger reachable the moment the server is up — rather than into a free
+tier that sleeps between requests.
