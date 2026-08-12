@@ -19,10 +19,13 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiServiceUnavailableResponse,
   ApiTags,
 } from '@nestjs/swagger';
 import { Auth } from '../auth/auth.decorator';
 import { Role } from '../generated/prisma/enums';
+import { SyncReportDto } from '../swapi/dto/sync-report.dto';
+import { SwapiSyncService } from '../swapi/swapi-sync.service';
 import { CreateFilmDto } from './dto/create-film.dto';
 import { FilmResponseDto } from './dto/film-response.dto';
 import { PaginatedFilmsDto } from './dto/paginated-films.dto';
@@ -33,7 +36,10 @@ import { FilmsService } from './films.service';
 @ApiTags('Films')
 @Controller('films')
 export class FilmsController {
-  constructor(private readonly films: FilmsService) {}
+  constructor(
+    private readonly films: FilmsService,
+    private readonly swapiSync: SwapiSyncService,
+  ) {}
 
   @Get()
   @ApiOperation({
@@ -45,6 +51,22 @@ export class FilmsController {
   @ApiBadRequestResponse({ description: 'Invalid query parameters' })
   findAll(@Query() query: QueryFilmsDto): Promise<PaginatedFilmsDto> {
     return this.films.findAll(query);
+  }
+
+  @Post('sync')
+  @Auth(Role.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Import films from the public Star Wars API',
+    description:
+      'Matches films by episode number, so running it repeatedly is safe: the second run changes nothing. Answers with what it did rather than an empty 204. The same job also runs on a schedule when SWAPI_SYNC_ENABLED is on.',
+  })
+  @ApiOkResponse({ type: SyncReportDto })
+  @ApiServiceUnavailableResponse({
+    description: 'The Star Wars API is unreachable or answered unusable data',
+  })
+  sync(): Promise<SyncReportDto> {
+    return this.swapiSync.sync();
   }
 
   @Get(':id')

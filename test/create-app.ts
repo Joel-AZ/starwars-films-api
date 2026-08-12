@@ -1,5 +1,5 @@
 import { INestApplication } from '@nestjs/common';
-import { Test } from '@nestjs/testing';
+import { Test, TestingModuleBuilder } from '@nestjs/testing';
 import { App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/common/configure-app';
@@ -10,10 +10,15 @@ export interface TestContext {
   prisma: PrismaService;
 }
 
-export async function createTestApp(): Promise<TestContext> {
-  const moduleFixture = await Test.createTestingModule({
-    imports: [AppModule],
-  }).compile();
+// `customize` is where providers get replaced — the Star Wars client, for
+// instance, so no test ever reaches out to the real API.
+export async function createTestApp(
+  customize?: (builder: TestingModuleBuilder) => TestingModuleBuilder,
+): Promise<TestContext> {
+  const builder = Test.createTestingModule({ imports: [AppModule] });
+  const moduleFixture = await (
+    customize ? customize(builder) : builder
+  ).compile();
 
   const app = moduleFixture.createNestApplication<INestApplication<App>>();
   configureApp(app);

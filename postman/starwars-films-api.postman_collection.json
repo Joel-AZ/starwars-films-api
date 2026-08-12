@@ -595,6 +595,101 @@
           ]
         },
         {
+          "name": "Sync from the Star Wars API (admin)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/films/sync",
+              "host": ["{{baseUrl}}"],
+              "path": ["films", "sync"]
+            },
+            "description": "Imports the upstream catalogue. Matches films by episode number, so sending it twice is safe — the second run reports everything as unchanged. Send it again right now and watch `created` drop to zero."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('responds 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test('reports what it did instead of an empty body', () => {",
+                  "  pm.expect(body).to.include.all.keys('created', 'updated', 'unchanged', 'received', 'durationMs');",
+                  "});",
+                  "",
+                  "pm.test('touched every film it received', () => {",
+                  "  pm.expect(body.created + body.updated + body.unchanged).to.eql(body.received);",
+                  "});",
+                  "",
+                  "pm.test('imported something', () => pm.expect(body.received).to.be.above(0));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Sync again changes nothing",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/films/sync",
+              "host": ["{{baseUrl}}"],
+              "path": ["films", "sync"]
+            },
+            "description": "The idempotency check: the same import, immediately after, must create and update nothing."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('responds 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test('creates nothing the second time', () => pm.expect(body.created).to.eql(0));",
+                  "pm.test('updates nothing the second time', () => pm.expect(body.updated).to.eql(0));",
+                  "pm.test('reports every film as unchanged', () => pm.expect(body.unchanged).to.eql(body.received));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Sync as a regular user returns 403",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/films/sync",
+              "host": ["{{baseUrl}}"],
+              "path": ["films", "sync"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('responds 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "Create film (admin)",
           "request": {
             "auth": { "type": "noauth" },

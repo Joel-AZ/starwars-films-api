@@ -64,12 +64,42 @@ Everything lives under the `/api` prefix.
 | `POST` | `/api/films` | `ADMIN` |
 | `PATCH` | `/api/films/:id` | `ADMIN` |
 | `DELETE` | `/api/films/:id` | `ADMIN` |
-
-Synchronization with the Star Wars API is in progress.
+| `POST` | `/api/films/sync` | `ADMIN` |
 
 `GET /api/films` supports `page`, `limit` (capped at 100), `search` (case-insensitive,
 against the title and the director), `sortBy` and `sortOrder`, and answers with the
 page plus the metadata needed to navigate it.
+
+## Synchronizing with the Star Wars API
+
+`POST /api/films/sync` imports the upstream catalogue. It matches films by episode
+number, so running it repeatedly is safe, and it answers with what it did instead of
+an empty `204`:
+
+```json
+{ "created": 6, "updated": 0, "unchanged": 0, "received": 6, "durationMs": 364 }
+```
+
+Run it a second time and the same call reports `{ "created": 0, "updated": 0,
+"unchanged": 6 }`. Only the descriptive columns are ever written: the episode number
+identifies the row, and films created locally through `POST /films` are never touched
+by an import.
+
+The same job also runs on a schedule, off by default:
+
+| Variable | Default | What it does |
+| --- | --- | --- |
+| `SWAPI_BASE_URL` | `https://swapi.info/api` | Which mirror to import from |
+| `SWAPI_SYNC_ENABLED` | `false` | Whether to register the scheduled job at all |
+| `SWAPI_SYNC_CRON` | `0 3 * * *` | When it runs, once registered |
+
+It ships disabled on purpose: nobody wants a background job hitting a third-party
+API from a laptop or during a test run. The endpoint is always there to force one.
+
+`swapi.dev` was unreachable while this was written, so the default points at the
+`swapi.info` mirror. The two answer with different shapes — a bare array and the
+classic `{ results }` envelope — and the client accepts both, so `SWAPI_BASE_URL` can
+be pointed at either.
 
 ### Roles
 
@@ -137,6 +167,7 @@ src/
   filters/        exception filters mounted globally
   health/         liveness and database connectivity
   prisma/         PrismaService, registered globally
+  swapi/          the Star Wars API integration, isolated from the domain
   users/          user persistence
 test/             e2e suites and their harness
 postman/          exported collection
@@ -186,9 +217,15 @@ Prisma's codes onto HTTP — a unique-constraint violation becomes a 409, a miss
 record a 404 — using the same body shape Nest produces everywhere else. Without it a
 duplicate episode number would surface as an opaque 500.
 
-**swapi.dev was unreachable during development**, so `SWAPI_BASE_URL` defaults to
-the `swapi.info` mirror and the client accepts both response shapes (a bare array
-and the classic `{ results }` envelope).
+**The Star Wars integration lives in its own module.** `swapi/` knows about the
+upstream payload and nothing about HTTP routing; `films/` owns the domain and does
+not know where an imported film came from beyond its `source` column. The endpoint
+sits on the films controller because that is where the route belongs, and delegates.
+
+**Tests never reach the real Star Wars API.** The e2e suite swaps the client for a
+stub, so it is deterministic and works offline. The live integration was verified by
+hand instead — twice in a row, to confirm the second run reports everything as
+unchanged.
 
 ### What is deliberately not here
 
