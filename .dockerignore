@@ -1,0 +1,19 @@
+node_modules
+dist
+coverage
+.git
+.github
+.idea
+.claude
+test
+postman
+
+# Regenerated inside the image so it always matches the schema being built.
+src/generated
+
+.env
+.env.*
+!.env.example
+
+*.md
+!README.md

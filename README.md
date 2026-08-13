@@ -137,6 +137,39 @@ adding a field to the registration payload.
 pnpm dlx newman run postman/starwars-films-api.postman_collection.json
 ```
 
+## Deploying
+
+The repository ships a `Dockerfile` and a `railway.json`, so a Railway service
+pointed at this repo builds and runs without further configuration. On start the
+container applies pending migrations and seeds the administrator before booting the
+server, which means a brand-new database is usable on the first request.
+
+Two variables have to be set; everything else has a working default:
+
+| Variable | Value |
+| --- | --- |
+| `DATABASE_URL` | Railway exposes it as `${{ Postgres.DATABASE_URL }}` |
+| `JWT_SECRET` | Any string of 16 characters or more |
+
+`PORT` is injected by the platform and the app honours it. The health check is
+already declared at `/api/health`, so a deployment that cannot reach its database is
+rolled back instead of served.
+
+The same image runs locally:
+
+```bash
+docker build -t starwars-films-api .
+docker run --rm -p 3000:3000 \
+  -e DATABASE_URL="postgresql://postgres:postgres@host.docker.internal:5433/starwars" \
+  -e JWT_SECRET="a-secret-long-enough" \
+  starwars-films-api
+```
+
+Seeding on every boot is a deliberate choice for a demo deployment, not a
+recommendation for a real one: it keeps the documented administrator working after a
+restart, at the cost of publishing known credentials. The seed upserts a single row,
+so repeated boots are harmless.
+
 ## Tests
 
 ```bash
@@ -254,8 +287,7 @@ them would add structure without removing a problem. The same goes for refresh
 tokens: the brief asks for an access token, and rotation is a meaningful amount of
 surface for something nothing here needs yet.
 
-**There is no hosted instance.** Running it locally is four commands and the
-quickstart above is the whole story, so the effort went into making that path
-frictionless — a seeded administrator, a Postman collection that works on the first
-send, and Swagger reachable the moment the server is up — rather than into a free
-tier that sleeps between requests.
+No orchestration beyond a single container either. The `Dockerfile` runs migrations
+and the seed before the server and stops there: no init containers, no entrypoint
+script, no process manager. A platform that can restart a failed container already
+covers what those would add here.
